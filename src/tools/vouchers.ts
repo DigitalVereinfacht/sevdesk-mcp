@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { sevdeskFetch, sevdeskPost, sevdeskPut, sevdeskDelete, buildQueryString, SevdeskApiResponse, SevdeskSingleResponse, extractSingleObject } from "../api.js";
+import { sevdeskFetch, sevdeskPost, sevdeskPut, sevdeskDelete, sevdeskUploadFile, buildQueryString, SevdeskApiResponse, SevdeskSingleResponse, extractSingleObject, VoucherFileUploadResponse } from "../api.js";
 import type { Voucher, VoucherPos } from "../types.js";
 
 /**
@@ -184,6 +184,14 @@ const voucherPositionSchema = z.object({
 });
 
 /**
+ * Upload voucher file schema
+ */
+export const uploadVoucherFileSchema = {
+  fileContent: z.string().describe("Base64-encoded file content (PDF, JPG, PNG)"),
+  fileName: z.string().describe("Original filename with extension (e.g., receipt.pdf, invoice.jpg)"),
+};
+
+/**
  * Create voucher schema (uses factory endpoint)
  */
 export const createVoucherSchema = {
@@ -196,6 +204,7 @@ export const createVoucherSchema = {
   currency: z.string().optional().describe("Currency code (default: EUR)"),
   taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss"),
   voucherType: z.string().optional().describe("Voucher type: VOU (voucher), TA (travel expense)"),
+  filename: z.string().optional().describe("Filename from upload_voucher_file to attach document"),
 };
 
 /**
@@ -281,6 +290,32 @@ export const deleteVoucherPositionSchema = {
 };
 
 /**
+ * Upload a file to attach to a voucher
+ */
+export async function uploadVoucherFile(params: {
+  fileContent: string;
+  fileName: string;
+}): Promise<VoucherFileUploadResponse> {
+  return sevdeskUploadFile("/Voucher/Factory/uploadTempFile", params.fileContent, params.fileName);
+}
+
+/**
+ * Format upload result for display
+ */
+export function formatUploadResult(result: VoucherFileUploadResponse): string {
+  const lines: string[] = [
+    "File uploaded successfully:",
+    `Filename: ${result.filename}`,
+  ];
+  if (result.pages !== undefined) lines.push(`Pages: ${result.pages}`);
+  if (result.mimeType) lines.push(`MIME Type: ${result.mimeType}`);
+  if (result.originMimeType) lines.push(`Original MIME Type: ${result.originMimeType}`);
+  lines.push("");
+  lines.push("Use this filename when creating a voucher to attach this document.");
+  return lines.join("\n");
+}
+
+/**
  * Create a new voucher using the factory endpoint
  */
 export async function createVoucher(params: {
@@ -300,6 +335,7 @@ export async function createVoucher(params: {
   currency?: string;
   taxType?: string;
   voucherType?: string;
+  filename?: string;
 }): Promise<Voucher> {
   // Build voucher object for factory endpoint
   const voucher: Record<string, unknown> = {
@@ -336,10 +372,15 @@ export async function createVoucher(params: {
     return position;
   });
 
-  const body = {
+  const body: Record<string, unknown> = {
     voucher,
     voucherPosSave,
   };
+
+  // Add filename if provided (from uploadVoucherFile)
+  if (params.filename !== undefined) {
+    body.filename = params.filename;
+  }
 
   const response = await sevdeskPost<{ objects: { voucher: Voucher } }>("/Voucher/Factory/saveVoucher", body);
   return response.objects.voucher;

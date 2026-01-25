@@ -160,3 +160,64 @@ export async function sevdeskFetchPdf(endpoint: string): Promise<string> {
   const data = await response.json() as { objects: { content: string } };
   return data.objects.content;
 }
+
+/**
+ * Response from voucher file upload
+ */
+export interface VoucherFileUploadResponse {
+  filename: string;
+  pages?: number;
+  mimeType?: string;
+  originMimeType?: string;
+  contentHash?: string;
+}
+
+/**
+ * Upload file to sevdesk API (multipart/form-data)
+ * Used for attaching receipts/documents to vouchers
+ */
+export async function sevdeskUploadFile(
+  endpoint: string,
+  fileContent: string, // base64 encoded
+  fileName: string
+): Promise<VoucherFileUploadResponse> {
+  const token = process.env.SEVDESK_API_TOKEN;
+  if (!token) {
+    throw new Error(
+      "SEVDESK_API_TOKEN environment variable is not set. " +
+        "Please configure your API token in the MCP server settings."
+    );
+  }
+
+  const url = `${SEVDESK_API_BASE}${endpoint}`;
+
+  // Decode base64 to binary
+  const binaryData = Buffer.from(fileContent, "base64");
+
+  // Create a Blob from the binary data
+  const blob = new Blob([binaryData]);
+
+  // Create FormData and append the file
+  const formData = new FormData();
+  formData.append("file", blob, fileName);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: token,
+      Accept: "application/json",
+      // Note: Don't set Content-Type for FormData, browser/node will set it with boundary
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Sevdesk API error (${response.status}): ${errorText || response.statusText}`
+    );
+  }
+
+  const data = await response.json() as { objects: VoucherFileUploadResponse };
+  return data.objects;
+}

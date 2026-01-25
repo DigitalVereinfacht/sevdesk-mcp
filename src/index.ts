@@ -72,6 +72,7 @@ import {
 import {
   listVouchersSchema,
   getVoucherSchema,
+  uploadVoucherFileSchema,
   createVoucherSchema,
   updateVoucherSchema,
   deleteVoucherSchema,
@@ -84,6 +85,7 @@ import {
   deleteVoucherPositionSchema,
   listVouchers,
   getVoucher,
+  uploadVoucherFile,
   createVoucher,
   updateVoucher,
   deleteVoucher,
@@ -96,6 +98,7 @@ import {
   deleteVoucherPosition,
   formatVouchersList,
   formatVoucher,
+  formatUploadResult,
   formatVoucherResult,
   formatVoucherDeleteResult,
   formatVoucherPaymentResult,
@@ -526,6 +529,15 @@ server.tool("get_voucher", "Get a specific voucher/receipt by ID from sevdesk", 
     return { content: [{ type: "text", text: formatVoucher(voucher) }] };
   } catch (error) {
     return handleError(error, "getting voucher");
+  }
+});
+
+server.tool("upload_voucher_file", "Upload a file (PDF, image) to attach to a voucher", uploadVoucherFileSchema, async (params) => {
+  try {
+    const result = await uploadVoucherFile(params);
+    return { content: [{ type: "text", text: formatUploadResult(result) }] };
+  } catch (error) {
+    return handleError(error, "uploading voucher file");
   }
 });
 
@@ -1199,7 +1211,7 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
 
   console.error("Starting sevdesk-mcp server v2.0.0...");
-  console.error("Registered 76 tools across 10 resource categories");
+  console.error("Registered 77 tools across 10 resource categories");
 
   await server.connect(transport);
 
