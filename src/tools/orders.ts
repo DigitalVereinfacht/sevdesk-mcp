@@ -7,6 +7,20 @@ import { z } from "zod";
 import { sevdeskFetch, sevdeskPost, sevdeskPut, sevdeskDelete, sevdeskFetchPdf, buildQueryString, SevdeskApiResponse, SevdeskSingleResponse, extractSingleObject } from "../api.js";
 import type { Order, OrderPos } from "../types.js";
 
+// Cache for current user ID
+let cachedUserId: string | null = null;
+
+/**
+ * Get the current SevUser ID (cached)
+ */
+async function getCurrentUserId(): Promise<string> {
+  if (cachedUserId) return cachedUserId;
+
+  const response = await sevdeskFetch<{ objects: Array<{ id: string }> }>("/SevUser?limit=1");
+  cachedUserId = response.objects[0].id;
+  return cachedUserId;
+}
+
 // ============================================================================
 // Schemas
 // ============================================================================
@@ -246,14 +260,18 @@ export async function createOrder(params: {
   showNet?: boolean;
 }): Promise<Order> {
   const orderDate = params.orderDate || new Date().toISOString().split("T")[0];
+  const userId = await getCurrentUserId();
 
   const order: Record<string, unknown> = {
     objectName: "Order",
     contact: { id: params.contactId, objectName: "Contact" },
+    contactPerson: { id: userId, objectName: "SevUser" },
     orderDate: orderDate,
     addressCountry: { id: 1, objectName: "StaticCountry" },
     status: 100,
     taxType: params.taxType || "default",
+    taxRate: 0,
+    taxText: "Umsatzsteuer",
     currency: params.currency || "EUR",
     orderType: params.orderType || "AN",
     mapAll: true,

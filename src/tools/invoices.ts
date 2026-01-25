@@ -373,6 +373,8 @@ export async function createInvoice(params: {
     taxType: params.taxType || "default",
     currency: params.currency || "EUR",
     invoiceType: params.invoiceType || "RE",
+    taxRate: params.taxRate || 0,
+    taxText: "Umsatzsteuer",
     mapAll: true,
     showNet: params.showNet !== false,
   };
@@ -383,7 +385,6 @@ export async function createInvoice(params: {
   if (params.deliveryDate !== undefined) invoice.deliveryDate = params.deliveryDate;
   if (params.deliveryDateUntil !== undefined) invoice.deliveryDateUntil = params.deliveryDateUntil;
   if (params.timeToPay !== undefined) invoice.timeToPay = params.timeToPay;
-  if (params.taxRate !== undefined) invoice.taxRate = params.taxRate;
   if (params.sendType !== undefined) invoice.sendType = params.sendType;
 
   // Build positions array
