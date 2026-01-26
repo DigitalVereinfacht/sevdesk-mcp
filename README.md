@@ -25,15 +25,14 @@ A comprehensive Model Context Protocol (MCP) server for integrating with the [se
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/sajadghawami/sevdesk-mcp.git
 cd sevdesk-mcp
 
-# Install dependencies
-pnpm install
+# Install dependencies (choose one)
+pnpm install   # or: npm install | yarn install
 
-# Build the server
-pnpm build
+# Build
+pnpm build     # or: npm run build | yarn build
 ```
 
 ## Configuration
