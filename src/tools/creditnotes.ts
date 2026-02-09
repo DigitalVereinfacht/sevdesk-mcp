@@ -71,7 +71,8 @@ export const createCreditNoteSchema = {
   headText: z.string().optional().describe("Text before positions"),
   footText: z.string().optional().describe("Text after positions"),
   currency: z.string().optional().describe("Currency code (default: EUR)"),
-  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss"),
+  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss (v1.0 — use taxRule for v2.0 accounts)"),
+  taxRule: z.number().optional().describe("Tax rule for v2.0 accounts: 1=taxable (default for Regelbesteuerer), 2=EU intra-community, 3=reverse charge §13b, 11=Kleinunternehmer §19, 17=not taxable inland"),
   showNet: z.boolean().optional().describe("Show net prices (default: true)"),
   bookingCategory: z.string().optional().describe("Booking category"),
 };
@@ -100,6 +101,20 @@ export const deleteCreditNoteSchema = {
 export const getCreditNotePdfSchema = {
   id: z.string().describe("The sevdesk credit note ID"),
   download: z.boolean().optional().describe("Set to true to get download-ready content"),
+};
+
+/**
+ * Reset credit note to draft schema (v2.0)
+ */
+export const resetCreditNoteToDraftSchema = {
+  id: z.string().describe("The sevdesk credit note ID to reset to draft status (100)"),
+};
+
+/**
+ * Reset credit note to open schema (v2.0)
+ */
+export const resetCreditNoteToOpenSchema = {
+  id: z.string().describe("The sevdesk credit note ID to reset to open status (200)"),
 };
 
 /**
@@ -242,6 +257,7 @@ export async function createCreditNote(params: {
   footText?: string;
   currency?: string;
   taxType?: string;
+  taxRule?: number;
   showNet?: boolean;
   bookingCategory?: string;
 }): Promise<CreditNote> {
@@ -255,7 +271,7 @@ export async function createCreditNote(params: {
     creditNoteDate: creditNoteDate,
     addressCountry: { id: 1, objectName: "StaticCountry" },
     status: 100,
-    taxType: params.taxType || "default",
+    taxType: params.taxRule ? "default" : (params.taxType || "default"),
     taxRate: 0,
     taxText: "Umsatzsteuer",
     currency: params.currency || "EUR",
@@ -263,6 +279,7 @@ export async function createCreditNote(params: {
     showNet: params.showNet !== false,
   };
 
+  if (params.taxRule !== undefined) creditNote.taxRule = { id: params.taxRule, objectName: "TaxRule" };
   if (params.header !== undefined) creditNote.header = params.header;
   if (params.headText !== undefined) creditNote.headText = params.headText;
   if (params.footText !== undefined) creditNote.footText = params.footText;
@@ -353,6 +370,22 @@ export async function sendCreditNoteEmail(params: {
   };
 
   await sevdeskPost(`/CreditNote/${params.id}/sendViaEmail`, body);
+}
+
+/**
+ * Reset credit note to draft (v2.0 — PUT /CreditNote/{id}/resetToDraft)
+ */
+export async function resetCreditNoteToDraft(params: { id: string }): Promise<CreditNote> {
+  const response = await sevdeskPut<SevdeskSingleResponse<CreditNote>>(`/CreditNote/${params.id}/resetToDraft`, {});
+  return extractSingleObject(response);
+}
+
+/**
+ * Reset credit note to open (v2.0 — PUT /CreditNote/{id}/resetToOpen)
+ */
+export async function resetCreditNoteToOpen(params: { id: string }): Promise<CreditNote> {
+  const response = await sevdeskPut<SevdeskSingleResponse<CreditNote>>(`/CreditNote/${params.id}/resetToOpen`, {});
+  return extractSingleObject(response);
 }
 
 /**
@@ -493,6 +526,13 @@ export function formatCreditNotesList(creditNotes: CreditNote[]): string {
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Format credit note status change result
+ */
+export function formatCreditNoteStatusChangeResult(cn: CreditNote, action: string): string {
+  return `Credit note ${cn.creditNoteNumber} ${action}: ${getStatusLabel(cn.status)}`;
 }
 
 /**

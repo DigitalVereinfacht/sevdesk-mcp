@@ -202,9 +202,11 @@ export const createVoucherSchema = {
   description: z.string().optional().describe("Voucher description"),
   paymentDeadline: z.string().optional().describe("Payment deadline (YYYY-MM-DD)"),
   currency: z.string().optional().describe("Currency code (default: EUR)"),
-  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss"),
+  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss (v1.0 — use taxRule for v2.0 accounts)"),
+  taxRule: z.number().optional().describe("Tax rule for v2.0 accounts: 1=taxable (default for Regelbesteuerer), 2=EU intra-community, 3=reverse charge §13b, 11=Kleinunternehmer §19, 17=not taxable inland"),
   voucherType: z.string().optional().describe("Voucher type: VOU (voucher), TA (travel expense)"),
   filename: z.string().optional().describe("Filename from upload_voucher_file to attach document"),
+  costCentreId: z.string().optional().describe("Cost centre ID to assign voucher to a specific location (e.g. restaurant branch)"),
 };
 
 /**
@@ -215,6 +217,7 @@ export const updateVoucherSchema = {
   description: z.string().optional().describe("Voucher description"),
   paymentDeadline: z.string().optional().describe("Payment deadline (YYYY-MM-DD)"),
   deliveryDate: z.string().optional().describe("Delivery date (YYYY-MM-DD)"),
+  costCentreId: z.string().optional().describe("Cost centre ID to assign voucher to a specific location (e.g. restaurant branch)"),
 };
 
 /**
@@ -334,8 +337,10 @@ export async function createVoucher(params: {
   paymentDeadline?: string;
   currency?: string;
   taxType?: string;
+  taxRule?: number;
   voucherType?: string;
   filename?: string;
+  costCentreId?: string;
 }): Promise<Voucher> {
   // Build voucher object for factory endpoint
   const voucher: Record<string, unknown> = {
@@ -344,16 +349,18 @@ export async function createVoucher(params: {
     creditDebit: params.creditDebit,
     voucherType: params.voucherType || "VOU",
     status: 50, // Draft
-    taxType: params.taxType || "default",
+    taxType: params.taxRule ? "default" : (params.taxType || "default"),
     currency: params.currency || "EUR",
     mapAll: true,
   };
 
+  if (params.taxRule !== undefined) voucher.taxRule = { id: params.taxRule, objectName: "TaxRule" };
   if (params.supplierId !== undefined) {
     voucher.supplier = { id: params.supplierId, objectName: "Contact" };
   }
   if (params.description !== undefined) voucher.description = params.description;
   if (params.paymentDeadline !== undefined) voucher.paymentDeadline = params.paymentDeadline;
+  if (params.costCentreId !== undefined) voucher.costCentre = { id: params.costCentreId, objectName: "CostCentre" };
 
   // Build positions array
   const voucherPosSave = params.positions.map((pos) => {
@@ -394,12 +401,14 @@ export async function updateVoucher(params: {
   description?: string;
   paymentDeadline?: string;
   deliveryDate?: string;
+  costCentreId?: string;
 }): Promise<Voucher> {
   const body: Record<string, unknown> = {};
 
   if (params.description !== undefined) body.description = params.description;
   if (params.paymentDeadline !== undefined) body.paymentDeadline = params.paymentDeadline;
   if (params.deliveryDate !== undefined) body.deliveryDate = params.deliveryDate;
+  if (params.costCentreId !== undefined) body.costCentre = { id: params.costCentreId, objectName: "CostCentre" };
 
   const response = await sevdeskPut<SevdeskSingleResponse<Voucher>>(`/Voucher/${params.id}`, body);
   return extractSingleObject(response);
