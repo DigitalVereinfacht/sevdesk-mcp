@@ -29,11 +29,15 @@ import {
   listInvoicesSchema,
   getInvoiceSchema,
   createInvoiceSchema,
+  createRecurringInvoiceSchema,
   updateInvoiceSchema,
   deleteInvoiceSchema,
   getInvoicePdfSchema,
   sendInvoiceEmailSchema,
-  changeInvoiceStatusSchema,
+  resetInvoiceToDraftSchema,
+  resetInvoiceToOpenSchema,
+  markInvoiceSentSchema,
+  enshrineInvoiceSchema,
   bookInvoicePaymentSchema,
   listInvoicePositionsSchema,
   getInvoicePositionSchema,
@@ -43,11 +47,15 @@ import {
   listInvoices,
   getInvoice,
   createInvoice,
+  createRecurringInvoice,
   updateInvoice,
   deleteInvoice,
   getInvoicePdf,
   sendInvoiceEmail,
-  changeInvoiceStatus,
+  resetInvoiceToDraft,
+  resetInvoiceToOpen,
+  markInvoiceSent,
+  enshrineInvoice,
   bookInvoicePayment,
   listInvoicePositions,
   getInvoicePosition,
@@ -57,10 +65,12 @@ import {
   formatInvoicesList,
   formatInvoice,
   formatInvoiceResult,
+  formatRecurringInvoiceResult,
   formatInvoiceDeleteResult,
   formatPdfResult,
   formatEmailSentResult,
   formatStatusChangeResult,
+  formatInvoiceEnshrineResult,
   formatPaymentBookedResult,
   formatInvoicePositionsList,
   formatInvoicePosition,
@@ -193,6 +203,8 @@ import {
   updateCreditNoteSchema,
   deleteCreditNoteSchema,
   getCreditNotePdfSchema,
+  resetCreditNoteToDraftSchema,
+  resetCreditNoteToOpenSchema,
   sendCreditNoteEmailSchema,
   listCreditNotePositionsSchema,
   getCreditNotePositionSchema,
@@ -205,6 +217,8 @@ import {
   updateCreditNote,
   deleteCreditNote,
   getCreditNotePdf,
+  resetCreditNoteToDraft,
+  resetCreditNoteToOpen,
   sendCreditNoteEmail,
   listCreditNotePositions,
   getCreditNotePosition,
@@ -216,12 +230,27 @@ import {
   formatCreditNoteResult,
   formatCreditNoteDeleteResult,
   formatCreditNotePdfResult,
+  formatCreditNoteStatusChangeResult,
   formatCreditNoteEmailSentResult,
   formatCreditNotePositionsList,
   formatCreditNotePosition,
   formatCreditNotePositionResult,
   formatCreditNotePositionDeleteResult,
 } from "./tools/creditnotes.js";
+
+// Import export tools
+import {
+  exportDatevSchema,
+  exportInvoiceCsvSchema,
+  exportVoucherListCsvSchema,
+  exportTransactionsCsvSchema,
+  exportDatev,
+  exportInvoiceCsv,
+  exportVoucherListCsv,
+  exportTransactionsCsv,
+  formatDatevExportResult,
+  formatCsvExportResult,
+} from "./tools/exports.js";
 
 // Import part tools
 import {
@@ -411,6 +440,15 @@ server.tool("create_invoice", "Create a new invoice in sevdesk", createInvoiceSc
   }
 });
 
+server.tool("create_recurring_invoice", "Create a recurring invoice in sevdesk (auto-generates invoices at set intervals)", createRecurringInvoiceSchema, async (params) => {
+  try {
+    const invoice = await createRecurringInvoice(params);
+    return { content: [{ type: "text", text: formatRecurringInvoiceResult(invoice) }] };
+  } catch (error) {
+    return handleError(error, "creating recurring invoice");
+  }
+});
+
 server.tool("update_invoice", "Update an existing invoice in sevdesk", updateInvoiceSchema, async (params) => {
   try {
     const invoice = await updateInvoice(params);
@@ -447,12 +485,39 @@ server.tool("send_invoice_email", "Send an invoice via email from sevdesk", send
   }
 });
 
-server.tool("change_invoice_status", "Change invoice status in sevdesk", changeInvoiceStatusSchema, async (params) => {
+server.tool("reset_invoice_to_draft", "Reset an invoice to draft status (100) in sevdesk v2.0", resetInvoiceToDraftSchema, async (params) => {
   try {
-    const invoice = await changeInvoiceStatus(params);
-    return { content: [{ type: "text", text: formatStatusChangeResult(invoice) }] };
+    const invoice = await resetInvoiceToDraft(params);
+    return { content: [{ type: "text", text: formatStatusChangeResult(invoice, "reset to draft") }] };
   } catch (error) {
-    return handleError(error, "changing invoice status");
+    return handleError(error, "resetting invoice to draft");
+  }
+});
+
+server.tool("reset_invoice_to_open", "Reset an invoice to open status (200) in sevdesk v2.0", resetInvoiceToOpenSchema, async (params) => {
+  try {
+    const invoice = await resetInvoiceToOpen(params);
+    return { content: [{ type: "text", text: formatStatusChangeResult(invoice, "reset to open") }] };
+  } catch (error) {
+    return handleError(error, "resetting invoice to open");
+  }
+});
+
+server.tool("mark_invoice_sent", "Mark invoice as sent in sevdesk v2.0 (transitions draft→open)", markInvoiceSentSchema, async (params) => {
+  try {
+    const invoice = await markInvoiceSent(params);
+    return { content: [{ type: "text", text: formatStatusChangeResult(invoice, "marked as sent") }] };
+  } catch (error) {
+    return handleError(error, "marking invoice as sent");
+  }
+});
+
+server.tool("enshrine_invoice", "Enshrine (finalize) an invoice in sevdesk — prevents further changes", enshrineInvoiceSchema, async (params) => {
+  try {
+    const invoice = await enshrineInvoice(params);
+    return { content: [{ type: "text", text: formatInvoiceEnshrineResult(invoice) }] };
+  } catch (error) {
+    return handleError(error, "enshrining invoice");
   }
 });
 
@@ -917,6 +982,24 @@ server.tool("get_credit_note_pdf", "Get credit note PDF as base64 from sevdesk",
   }
 });
 
+server.tool("reset_credit_note_to_draft", "Reset a credit note to draft status (100) in sevdesk v2.0", resetCreditNoteToDraftSchema, async (params) => {
+  try {
+    const cn = await resetCreditNoteToDraft(params);
+    return { content: [{ type: "text", text: formatCreditNoteStatusChangeResult(cn, "reset to draft") }] };
+  } catch (error) {
+    return handleError(error, "resetting credit note to draft");
+  }
+});
+
+server.tool("reset_credit_note_to_open", "Reset a credit note to open status (200) in sevdesk v2.0", resetCreditNoteToOpenSchema, async (params) => {
+  try {
+    const cn = await resetCreditNoteToOpen(params);
+    return { content: [{ type: "text", text: formatCreditNoteStatusChangeResult(cn, "reset to open") }] };
+  } catch (error) {
+    return handleError(error, "resetting credit note to open");
+  }
+});
+
 server.tool("send_credit_note_email", "Send a credit note via email from sevdesk", sendCreditNoteEmailSchema, async (params) => {
   try {
     await sendCreditNoteEmail(params);
@@ -968,6 +1051,46 @@ server.tool("delete_credit_note_position", "Delete a credit note position", dele
     return { content: [{ type: "text", text: formatCreditNotePositionDeleteResult(params.id) }] };
   } catch (error) {
     return handleError(error, "deleting credit note position");
+  }
+});
+
+// ============================================================================
+// Export / DATEV Tools
+// ============================================================================
+
+server.tool("export_datev", "Export booking data in DATEV format from sevdesk (CSV). Scope: E=Earnings, X=Expenditure, T=Transactions, C=Cashregister, D=Assets", exportDatevSchema, async (params) => {
+  try {
+    const data = await exportDatev(params);
+    return { content: [{ type: "text", text: formatDatevExportResult(data) }] };
+  } catch (error) {
+    return handleError(error, "exporting DATEV data");
+  }
+});
+
+server.tool("export_invoice_csv", "Export invoices as CSV from sevdesk", exportInvoiceCsvSchema, async (params) => {
+  try {
+    const data = await exportInvoiceCsv(params);
+    return { content: [{ type: "text", text: formatCsvExportResult(data, "Invoice") }] };
+  } catch (error) {
+    return handleError(error, "exporting invoice CSV");
+  }
+});
+
+server.tool("export_voucher_csv", "Export vouchers/receipts list as CSV from sevdesk", exportVoucherListCsvSchema, async (params) => {
+  try {
+    const data = await exportVoucherListCsv(params);
+    return { content: [{ type: "text", text: formatCsvExportResult(data, "Voucher") }] };
+  } catch (error) {
+    return handleError(error, "exporting voucher CSV");
+  }
+});
+
+server.tool("export_transactions_csv", "Export bank transactions as CSV from sevdesk", exportTransactionsCsvSchema, async (params) => {
+  try {
+    const data = await exportTransactionsCsv(params);
+    return { content: [{ type: "text", text: formatCsvExportResult(data, "Transaction") }] };
+  } catch (error) {
+    return handleError(error, "exporting transactions CSV");
   }
 });
 

@@ -73,7 +73,8 @@ export const createOrderSchema = {
   currency: z.string().optional().describe("Currency code (default: EUR)"),
   deliveryDate: z.string().optional().describe("Delivery date (YYYY-MM-DD)"),
   orderType: z.string().optional().describe("Order type: AN (offer), AB (order confirmation), LI (delivery note)"),
-  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss"),
+  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss (v1.0 — use taxRule for v2.0 accounts)"),
+  taxRule: z.number().optional().describe("Tax rule for v2.0 accounts: 1=taxable (default for Regelbesteuerer), 2=EU intra-community, 3=reverse charge §13b, 11=Kleinunternehmer §19, 17=not taxable inland"),
   showNet: z.boolean().optional().describe("Show net prices (default: true)"),
 };
 
@@ -257,6 +258,7 @@ export async function createOrder(params: {
   deliveryDate?: string;
   orderType?: string;
   taxType?: string;
+  taxRule?: number;
   showNet?: boolean;
 }): Promise<Order> {
   const orderDate = params.orderDate || new Date().toISOString().split("T")[0];
@@ -269,7 +271,7 @@ export async function createOrder(params: {
     orderDate: orderDate,
     addressCountry: { id: 1, objectName: "StaticCountry" },
     status: 100,
-    taxType: params.taxType || "default",
+    taxType: params.taxRule ? "default" : (params.taxType || "default"),
     taxRate: 0,
     taxText: "Umsatzsteuer",
     currency: params.currency || "EUR",
@@ -278,6 +280,7 @@ export async function createOrder(params: {
     showNet: params.showNet !== false,
   };
 
+  if (params.taxRule !== undefined) order.taxRule = { id: params.taxRule, objectName: "TaxRule" };
   if (params.header !== undefined) order.header = params.header;
   if (params.headText !== undefined) order.headText = params.headText;
   if (params.footText !== undefined) order.footText = params.footText;

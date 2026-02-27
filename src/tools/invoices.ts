@@ -104,8 +104,9 @@ export async function getInvoice(params: { id: string }): Promise<Invoice> {
 function getStatusLabel(status: string): string {
   const statusMap: Record<string, string> = {
     "50": "Draft (not yet finalized)",
-    "100": "Open (not yet sent)",
-    "200": "Open (sent)",
+    "100": "Draft",
+    "200": "Open",
+    "750": "Partially paid",
     "1000": "Paid",
   };
   return statusMap[status] || `Unknown (${status})`;
@@ -207,9 +208,31 @@ export const createInvoiceSchema = {
   deliveryDate: z.string().optional().describe("Delivery date (YYYY-MM-DD)"),
   deliveryDateUntil: z.string().optional().describe("Delivery date until (YYYY-MM-DD)"),
   timeToPay: z.number().optional().describe("Payment terms in days"),
-  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss"),
+  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss (v1.0 — use taxRule for v2.0 accounts)"),
+  taxRule: z.number().optional().describe("Tax rule for v2.0 accounts: 1=taxable (default for Regelbesteuerer), 2=EU intra-community, 3=reverse charge §13b, 11=Kleinunternehmer §19, 17=not taxable inland"),
   taxRate: z.number().optional().describe("Default tax rate for all positions"),
   invoiceType: z.string().optional().describe("Invoice type: RE (default), SR (partial), ER (final), AR (advance), WKR (recurring)"),
+  showNet: z.boolean().optional().describe("Show net prices (default: true)"),
+  sendType: z.string().optional().describe("Send type: VPR (print), VM (mail), VP (post), VPDF (pdf)"),
+};
+
+/**
+ * Create recurring invoice schema (uses factory endpoint with recurring fields)
+ */
+export const createRecurringInvoiceSchema = {
+  contactId: z.string().describe("Contact ID for the invoice recipient"),
+  positions: z.array(invoicePositionSchema).describe("Invoice line items"),
+  accountIntervall: z.number().describe("Recurring interval: 0=weekly, 1=monthly, 2=quarterly, 3=semi-annually, 4=annually, 5=bi-weekly, 6=every 2 years, 7=every 3 years, 8=every 4 years, 9=every 5 years"),
+  accountNextInvoice: z.string().describe("Next invoice date (YYYY-MM-DD) — when the first/next recurring invoice should be generated"),
+  header: z.string().optional().describe("Invoice header/title"),
+  headText: z.string().optional().describe("Text before positions"),
+  footText: z.string().optional().describe("Text after positions"),
+  currency: z.string().optional().describe("Currency code (default: EUR)"),
+  discount: z.number().optional().describe("Overall discount percentage"),
+  timeToPay: z.number().optional().describe("Payment terms in days"),
+  taxType: z.string().optional().describe("Tax type: default, eu, noteu, custom, ss (v1.0 — use taxRule for v2.0 accounts)"),
+  taxRule: z.number().optional().describe("Tax rule for v2.0 accounts: 1=taxable, 2=EU, 3=reverse charge, 11=Kleinunternehmer, 17=not taxable inland"),
+  taxRate: z.number().optional().describe("Default tax rate for all positions"),
   showNet: z.boolean().optional().describe("Show net prices (default: true)"),
   sendType: z.string().optional().describe("Send type: VPR (print), VM (mail), VP (post), VPDF (pdf)"),
 };
@@ -256,11 +279,33 @@ export const sendInvoiceEmailSchema = {
 };
 
 /**
- * Change invoice status schema
+ * Reset invoice to draft schema (v2.0)
  */
-export const changeInvoiceStatusSchema = {
+export const resetInvoiceToDraftSchema = {
+  id: z.string().describe("The sevdesk invoice ID to reset to draft status (100)"),
+};
+
+/**
+ * Reset invoice to open schema (v2.0)
+ */
+export const resetInvoiceToOpenSchema = {
+  id: z.string().describe("The sevdesk invoice ID to reset to open status (200)"),
+};
+
+/**
+ * Mark invoice as sent schema (v2.0 — transitions draft→open)
+ */
+export const markInvoiceSentSchema = {
   id: z.string().describe("The sevdesk invoice ID"),
-  status: z.number().describe("New status: 100 (open not sent), 200 (open sent), 1000 (paid)"),
+  sendType: z.string().optional().describe("Send type: VPR (print), VM (mail), VP (post), VPDF (pdf). Default: VPDF"),
+  sendDraft: z.boolean().optional().describe("Set to true to mark as sent without actually sending"),
+};
+
+/**
+ * Enshrine (finalize) invoice schema
+ */
+export const enshrineInvoiceSchema = {
+  id: z.string().describe("The sevdesk invoice ID to enshrine (finalize)"),
 };
 
 /**
@@ -352,6 +397,7 @@ export async function createInvoice(params: {
   deliveryDateUntil?: string;
   timeToPay?: number;
   taxType?: string;
+  taxRule?: number;
   taxRate?: number;
   invoiceType?: string;
   showNet?: boolean;
@@ -370,7 +416,7 @@ export async function createInvoice(params: {
     discountTime: 0,
     addressCountry: { id: 1, objectName: "StaticCountry" }, // Germany default
     status: 100, // Draft
-    taxType: params.taxType || "default",
+    taxType: params.taxRule ? "default" : (params.taxType || "default"),
     currency: params.currency || "EUR",
     invoiceType: params.invoiceType || "RE",
     taxRate: params.taxRate || 0,
@@ -379,6 +425,7 @@ export async function createInvoice(params: {
     showNet: params.showNet !== false,
   };
 
+  if (params.taxRule !== undefined) invoice.taxRule = { id: params.taxRule, objectName: "TaxRule" };
   if (params.header !== undefined) invoice.header = params.header;
   if (params.headText !== undefined) invoice.headText = params.headText;
   if (params.footText !== undefined) invoice.footText = params.footText;
@@ -388,6 +435,95 @@ export async function createInvoice(params: {
   if (params.sendType !== undefined) invoice.sendType = params.sendType;
 
   // Build positions array
+  const invoicePosSave = params.positions.map((pos, index) => {
+    const position: Record<string, unknown> = {
+      objectName: "InvoicePos",
+      quantity: pos.quantity,
+      price: pos.price,
+      name: pos.name,
+      taxRate: pos.taxRate,
+      unity: { id: pos.unity || 1, objectName: "Unity" },
+      positionNumber: index,
+      mapAll: true,
+    };
+
+    if (pos.text !== undefined) position.text = pos.text;
+    if (pos.discount !== undefined) position.discount = pos.discount;
+    if (pos.partId !== undefined) {
+      position.part = { id: pos.partId, objectName: "Part" };
+    }
+
+    return position;
+  });
+
+  const body = {
+    invoice,
+    invoicePosSave,
+    takeDefaultAddress: true,
+  };
+
+  const response = await sevdeskPost<{ objects: { invoice: Invoice } }>("/Invoice/Factory/saveInvoice", body);
+  return response.objects.invoice;
+}
+
+/**
+ * Create a recurring invoice using the factory endpoint
+ */
+export async function createRecurringInvoice(params: {
+  contactId: string;
+  positions: Array<{
+    quantity: number;
+    price: number;
+    name: string;
+    taxRate: number;
+    unity?: number;
+    text?: string;
+    discount?: number;
+    partId?: string;
+  }>;
+  accountIntervall: number;
+  accountNextInvoice: string;
+  header?: string;
+  headText?: string;
+  footText?: string;
+  currency?: string;
+  discount?: number;
+  timeToPay?: number;
+  taxType?: string;
+  taxRule?: number;
+  taxRate?: number;
+  showNet?: boolean;
+  sendType?: string;
+}): Promise<Invoice> {
+  const userId = await getCurrentUserId();
+
+  const invoice: Record<string, unknown> = {
+    objectName: "Invoice",
+    contact: { id: params.contactId, objectName: "Contact" },
+    contactPerson: { id: userId, objectName: "SevUser" },
+    invoiceDate: new Date().toISOString().split("T")[0],
+    discount: params.discount || 0,
+    discountTime: 0,
+    addressCountry: { id: 1, objectName: "StaticCountry" },
+    status: 100,
+    taxType: params.taxRule ? "default" : (params.taxType || "default"),
+    currency: params.currency || "EUR",
+    invoiceType: "WKR",
+    taxRate: params.taxRate || 0,
+    taxText: "Umsatzsteuer",
+    mapAll: true,
+    showNet: params.showNet !== false,
+    accountIntervall: params.accountIntervall,
+    accountNextInvoice: params.accountNextInvoice,
+  };
+
+  if (params.taxRule !== undefined) invoice.taxRule = { id: params.taxRule, objectName: "TaxRule" };
+  if (params.header !== undefined) invoice.header = params.header;
+  if (params.headText !== undefined) invoice.headText = params.headText;
+  if (params.footText !== undefined) invoice.footText = params.footText;
+  if (params.timeToPay !== undefined) invoice.timeToPay = params.timeToPay;
+  if (params.sendType !== undefined) invoice.sendType = params.sendType;
+
   const invoicePosSave = params.positions.map((pos, index) => {
     const position: Record<string, unknown> = {
       objectName: "InvoicePos",
@@ -487,12 +623,37 @@ export async function sendInvoiceEmail(params: {
 }
 
 /**
- * Change invoice status
+ * Reset invoice to draft (v2.0 — PUT /Invoice/{id}/resetToDraft)
  */
-export async function changeInvoiceStatus(params: { id: string; status: number }): Promise<Invoice> {
-  const response = await sevdeskPut<SevdeskSingleResponse<Invoice>>(`/Invoice/${params.id}/changeStatus`, {
-    value: params.status,
+export async function resetInvoiceToDraft(params: { id: string }): Promise<Invoice> {
+  const response = await sevdeskPut<SevdeskSingleResponse<Invoice>>(`/Invoice/${params.id}/resetToDraft`, {});
+  return extractSingleObject(response);
+}
+
+/**
+ * Reset invoice to open (v2.0 — PUT /Invoice/{id}/resetToOpen)
+ */
+export async function resetInvoiceToOpen(params: { id: string }): Promise<Invoice> {
+  const response = await sevdeskPut<SevdeskSingleResponse<Invoice>>(`/Invoice/${params.id}/resetToOpen`, {});
+  return extractSingleObject(response);
+}
+
+/**
+ * Mark invoice as sent (v2.0 — PUT /Invoice/{id}/sendBy, transitions draft→open)
+ */
+export async function markInvoiceSent(params: { id: string; sendType?: string; sendDraft?: boolean }): Promise<Invoice> {
+  const response = await sevdeskPut<SevdeskSingleResponse<Invoice>>(`/Invoice/${params.id}/sendBy`, {
+    sendType: params.sendType || "VPDF",
+    sendDraft: params.sendDraft ?? false,
   });
+  return extractSingleObject(response);
+}
+
+/**
+ * Enshrine (finalize) an invoice (v2.0 — PUT /Invoice/{id}/enshrine)
+ */
+export async function enshrineInvoice(params: { id: string }): Promise<Invoice> {
+  const response = await sevdeskPut<SevdeskSingleResponse<Invoice>>(`/Invoice/${params.id}/enshrine`, {});
   return extractSingleObject(response);
 }
 
@@ -620,6 +781,19 @@ export async function deleteInvoicePosition(params: { id: string }): Promise<voi
 }
 
 /**
+ * Format recurring invoice result
+ */
+export function formatRecurringInvoiceResult(invoice: Invoice): string {
+  const intervalLabels: Record<number, string> = {
+    0: "weekly", 1: "monthly", 2: "quarterly", 3: "semi-annually",
+    4: "annually", 5: "bi-weekly", 6: "every 2 years", 7: "every 3 years",
+    8: "every 4 years", 9: "every 5 years",
+  };
+  const interval = invoice.accountIntervall !== null ? (intervalLabels[invoice.accountIntervall] || `interval ${invoice.accountIntervall}`) : "unknown";
+  return `Recurring invoice created successfully (${interval}, next: ${invoice.accountNextInvoice || "n/a"}):\n${formatInvoice(invoice)}`;
+}
+
+/**
  * Format invoice result
  */
 export function formatInvoiceResult(invoice: Invoice, action: string): string {
@@ -650,8 +824,15 @@ export function formatEmailSentResult(id: string, email: string): string {
 /**
  * Format status change result
  */
-export function formatStatusChangeResult(invoice: Invoice): string {
-  return `Invoice ${invoice.invoiceNumber} status changed to: ${getStatusLabel(invoice.status)}`;
+export function formatStatusChangeResult(invoice: Invoice, action: string): string {
+  return `Invoice ${invoice.invoiceNumber} ${action}: ${getStatusLabel(invoice.status)}`;
+}
+
+/**
+ * Format enshrine result
+ */
+export function formatInvoiceEnshrineResult(invoice: Invoice): string {
+  return `Invoice ${invoice.invoiceNumber} enshrined (finalized) successfully.`;
 }
 
 /**

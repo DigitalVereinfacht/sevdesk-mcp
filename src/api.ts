@@ -1,9 +1,11 @@
 /**
  * Sevdesk API Client
- * Base HTTP client for sevdesk API with authentication handling
+ * Base HTTP client for sevdesk API with authentication, retry logic, and rate limiting
  */
 
 const SEVDESK_API_BASE = "https://my.sevdesk.de/api/v1";
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
 
 export interface SevdeskApiResponse<T> {
   objects: T[];
@@ -24,12 +26,9 @@ export function extractSingleObject<T>(response: SevdeskSingleResponse<T>): T {
 }
 
 /**
- * Fetch wrapper for sevdesk API with authentication
+ * Get API token or throw
  */
-export async function sevdeskFetch<T>(
-  endpoint: string,
-  options?: RequestInit
-): Promise<T> {
+function getToken(): string {
   const token = process.env.SEVDESK_API_TOKEN;
   if (!token) {
     throw new Error(
@@ -37,17 +36,89 @@ export async function sevdeskFetch<T>(
         "Please configure your API token in the MCP server settings."
     );
   }
+  return token;
+}
 
+/**
+ * Build common headers for all API requests
+ */
+function buildHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: getToken(),
+    Accept: "application/json",
+    ...extra,
+  };
+
+  const apiVersion = process.env.SEVDESK_API_VERSION;
+  if (apiVersion) {
+    headers["X-Version"] = apiVersion;
+  }
+
+  return headers;
+}
+
+/**
+ * Sleep helper for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Determine if a status code is retryable (429 rate limit or 5xx server error)
+ */
+function isRetryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * Get retry delay from response headers or calculate exponential backoff
+ */
+function getRetryDelay(response: Response, attempt: number): number {
+  const retryAfter = response.headers.get("Retry-After");
+  if (retryAfter) {
+    const seconds = parseInt(retryAfter, 10);
+    if (!isNaN(seconds)) return seconds * 1000;
+  }
+  return BASE_DELAY_MS * Math.pow(2, attempt);
+}
+
+/**
+ * Execute a fetch request with retry logic for 429/5xx responses
+ */
+async function fetchWithRetry(url: string, options: RequestInit): Promise<Response> {
+  let lastResponse: Response | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.ok || !isRetryable(response.status) || attempt === MAX_RETRIES) {
+      return response;
+    }
+
+    lastResponse = response;
+    const delay = getRetryDelay(response, attempt);
+    await sleep(delay);
+  }
+
+  return lastResponse!;
+}
+
+/**
+ * Fetch wrapper for sevdesk API with authentication and retry
+ */
+export async function sevdeskFetch<T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> {
   const url = `${SEVDESK_API_BASE}${endpoint}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     ...options,
-    headers: {
-      Authorization: token,
-      Accept: "application/json",
+    headers: buildHeaders({
       "Content-Type": "application/json",
-      ...options?.headers,
-    },
+      ...options?.headers as Record<string, string>,
+    }),
   });
 
   if (!response.ok) {
@@ -103,22 +174,11 @@ export async function sevdeskPut<T>(
  * DELETE request to sevdesk API
  */
 export async function sevdeskDelete(endpoint: string): Promise<void> {
-  const token = process.env.SEVDESK_API_TOKEN;
-  if (!token) {
-    throw new Error(
-      "SEVDESK_API_TOKEN environment variable is not set. " +
-        "Please configure your API token in the MCP server settings."
-    );
-  }
-
   const url = `${SEVDESK_API_BASE}${endpoint}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: "DELETE",
-    headers: {
-      Authorization: token,
-      Accept: "application/json",
-    },
+    headers: buildHeaders(),
   });
 
   if (!response.ok) {
@@ -133,21 +193,10 @@ export async function sevdeskDelete(endpoint: string): Promise<void> {
  * Fetch PDF content from sevdesk API (returns base64)
  */
 export async function sevdeskFetchPdf(endpoint: string): Promise<string> {
-  const token = process.env.SEVDESK_API_TOKEN;
-  if (!token) {
-    throw new Error(
-      "SEVDESK_API_TOKEN environment variable is not set. " +
-        "Please configure your API token in the MCP server settings."
-    );
-  }
-
   const url = `${SEVDESK_API_BASE}${endpoint}`;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: token,
-      Accept: "application/json",
-    },
+  const response = await fetchWithRetry(url, {
+    headers: buildHeaders(),
   });
 
   if (!response.ok) {
@@ -181,14 +230,6 @@ export async function sevdeskUploadFile(
   fileContent: string, // base64 encoded
   fileName: string
 ): Promise<VoucherFileUploadResponse> {
-  const token = process.env.SEVDESK_API_TOKEN;
-  if (!token) {
-    throw new Error(
-      "SEVDESK_API_TOKEN environment variable is not set. " +
-        "Please configure your API token in the MCP server settings."
-    );
-  }
-
   const url = `${SEVDESK_API_BASE}${endpoint}`;
 
   // Decode base64 to binary
@@ -201,13 +242,12 @@ export async function sevdeskUploadFile(
   const formData = new FormData();
   formData.append("file", blob, fileName);
 
-  const response = await fetch(url, {
+  // Build headers without Content-Type (FormData sets it with boundary)
+  const headers = buildHeaders();
+
+  const response = await fetchWithRetry(url, {
     method: "POST",
-    headers: {
-      Authorization: token,
-      Accept: "application/json",
-      // Note: Don't set Content-Type for FormData, browser/node will set it with boundary
-    },
+    headers,
     body: formData,
   });
 
