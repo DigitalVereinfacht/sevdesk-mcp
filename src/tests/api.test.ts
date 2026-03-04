@@ -244,7 +244,7 @@ describe('sevdeskUploadFile', () => {
     )
     expect(result.filename).toBe('receipt.pdf')
     expect(result.pages).toBe(1)
-    expect(capturedFormData?.get('file')).toBeTruthy()
+    expect((capturedFormData as unknown as FormData).get('file')).toBeTruthy()
   })
 
   it('throws on non-ok upload response', async () => {

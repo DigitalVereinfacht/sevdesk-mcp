@@ -620,7 +620,7 @@ describe('formatOrder', () => {
   })
 
   it('omits contact section when null', () => {
-    const output = formatOrder(makeOrder({ contact: null }))
+    const output = formatOrder(makeOrder({ contact: undefined }))
     expect(output).not.toContain('Contact ID:')
   })
 })

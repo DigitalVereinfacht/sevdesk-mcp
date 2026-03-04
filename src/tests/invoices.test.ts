@@ -800,7 +800,7 @@ describe('formatInvoice', () => {
   })
 
   it('skips Contact ID when contact is null', () => {
-    const output = formatInvoice(makeInvoice({ contact: null as unknown as Invoice['contact'] }))
+    const output = formatInvoice(makeInvoice({ contact: undefined }))
     expect(output).not.toContain('Contact ID:')
   })
 })

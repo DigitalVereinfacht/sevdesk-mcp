@@ -595,7 +595,7 @@ describe('formatCreditNote', () => {
   })
 
   it('omits contact when null', () => {
-    const output = formatCreditNote(makeCreditNote({ contact: null }))
+    const output = formatCreditNote(makeCreditNote({ contact: undefined }))
     expect(output).not.toContain('Contact ID:')
   })
 })

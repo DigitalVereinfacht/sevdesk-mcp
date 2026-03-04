@@ -252,7 +252,7 @@ describe('formatContactAddress', () => {
   })
 
   it('omits country when null', () => {
-    const address = makeContactAddress({ country: null })
+    const address = makeContactAddress({ country: undefined })
     const output = formatContactAddress(address)
     expect(output).not.toContain('Country ID:')
   })
