@@ -13,7 +13,11 @@
   "scripts": {
     "build": "tsc && chmod 755 build/index.js",
     "start": "node build/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui"
   },
   "keywords": [
     "mcp",
@@ -29,6 +33,9 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
-    "typescript": "^5.9.3"
+    "@vitest/coverage-v8": "^4.0.18",
+    "msw": "^2.12.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

@@ -101,6 +101,7 @@ async function fetchWithRetry(url: string, options: RequestInit): Promise<Respon
     await sleep(delay);
   }
 
+  /* v8 ignore next -- unreachable: loop always returns on attempt === MAX_RETRIES */
   return lastResponse!;
 }
 
