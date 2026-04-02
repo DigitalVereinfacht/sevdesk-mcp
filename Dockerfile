@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm@10
 
 WORKDIR /build
-RUN git clone https://github.com/sajadghawami/sevdesk-mcp.git .
+RUN git clone https://github.com/DigitalVereinfacht/sevdesk-mcp.git .
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
 
