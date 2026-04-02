@@ -1,0 +1,15 @@
+services:
+  sevdesk-mcp:
+    build: .
+    expose:
+      - "8000"
+    environment:
+      - SEVDESK_API_TOKEN=${SEVDESK_API_TOKEN}
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/sse').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
