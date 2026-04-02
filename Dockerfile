@@ -19,4 +19,7 @@ COPY --from=builder /build/package.json ./
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "supergateway --stdio 'node /app/build/index.js' --outputTransport sse --port 8000 --host 0.0.0.0 --cors --oauth2Bearer \"$MCP_AUTH_TOKEN\""]
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]
