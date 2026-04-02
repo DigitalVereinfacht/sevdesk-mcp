@@ -54,10 +54,10 @@ export async function listVouchers(params: {
     queryParams["creditDebit"] = params.creditDebit;
   }
   if (params.startDate) {
-    queryParams["startDate"] = params.startDate;
+    queryParams["startDate"] = Math.floor(new Date(params.startDate).getTime() / 1000);
   }
   if (params.endDate) {
-    queryParams["endDate"] = params.endDate;
+    queryParams["endDate"] = Math.floor(new Date(params.endDate + "T23:59:59").getTime() / 1000);
   }
   if (params.supplierId) {
     queryParams["supplier[id]"] = params.supplierId;

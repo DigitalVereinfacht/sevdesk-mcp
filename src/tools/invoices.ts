@@ -68,10 +68,12 @@ export async function listInvoices(params: {
     queryParams["invoiceNumber"] = params.invoiceNumber;
   }
   if (params.startDate) {
-    queryParams["startDate"] = params.startDate;
+    const ts = Math.floor(new Date(params.startDate).getTime() / 1000);
+    queryParams["startDate"] = ts;
   }
   if (params.endDate) {
-    queryParams["endDate"] = params.endDate;
+    const ts = Math.floor(new Date(params.endDate + "T23:59:59").getTime() / 1000);
+    queryParams["endDate"] = ts;
   }
   if (params.contactId) {
     queryParams["contact[id]"] = params.contactId;

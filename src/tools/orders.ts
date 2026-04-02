@@ -215,8 +215,8 @@ export async function listOrders(params: {
 
   if (params.status) queryParams["status"] = params.status;
   if (params.orderNumber) queryParams["orderNumber"] = params.orderNumber;
-  if (params.startDate) queryParams["startDate"] = params.startDate;
-  if (params.endDate) queryParams["endDate"] = params.endDate;
+  if (params.startDate) queryParams["startDate"] = Math.floor(new Date(params.startDate).getTime() / 1000);
+  if (params.endDate) queryParams["endDate"] = Math.floor(new Date(params.endDate + "T23:59:59").getTime() / 1000);
   if (params.contactId) {
     queryParams["contact[id]"] = params.contactId;
     queryParams["contact[objectName]"] = "Contact";
